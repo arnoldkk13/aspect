@@ -841,6 +841,16 @@ namespace aspect
       solve_stokes (LinearAlgebra::BlockVector &solution_vector);
 
       /**
+      * This function attempts to solve the stokes system using the function
+      * solve_stokes with exception handling in place if the system cannot be solved
+      * as is.
+      * TODO: Finish the comment for this function
+      *
+       */
+      std::pair<double,double>
+      solve_stokes_with_stabilization(DefectCorrectionResiduals &dcr, LinearAlgebra::BlockVector &search_direction, const bool use_picard);
+
+      /**
        * This function is called at the end of every time step. It runs all
        * the postprocessors that have been listed in the input parameter file
        * (see the manual) in turn. In particular, this usually includes

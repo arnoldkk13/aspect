@@ -644,76 +644,7 @@ namespace aspect
     LinearAlgebra::BlockVector search_direction;
     search_direction.reinit(solution, /* omit_zeroing_entries = */ true);
 
-    try
-      {
-        dcr.stokes_residuals = solve_stokes(search_direction);
-      }
-    catch (const std::exception &exc)
-      {
-        // Test that we are trying to handle exceptions and that
-        // the exception we got is one of the two documented by
-        // throw_linear_solver_failure_exception(). If not, we have a genuine
-        // problem here, and will need to get outta here right away:
-        if (newton_handler->parameters.use_Newton_failsafe == false ||
-            ((dynamic_cast<const ExcMessage *>(&exc)==nullptr) &&
-             (dynamic_cast<const QuietException *>(&exc)==nullptr)))
-          throw;
-
-        // start the solve over again and try with a stabilized version
-        pcout << "failed, trying again with stabilization" << std::endl;
-        newton_handler->parameters.preconditioner_stabilization = Newton::Parameters::Stabilization::SPD;
-        newton_handler->parameters.velocity_block_stabilization = Newton::Parameters::Stabilization::SPD;
-
-        // If the Stokes matrix depends on the solution, or we have active
-        // velocity boundary conditions, we need to re-assemble the system matrix
-        // (and preconditioner) every time. If we have active boundary conditions,
-        // they could a) depend on the solution, or b) be inhomogeneous. In both
-        // cases, just assembling the RHS will be incorrect.  If no active
-        // boundaries exist, we only have no-slip or free slip conditions, so we
-        // don't need to force assembly of the matrix.
-        if (stokes_matrix_depends_on_solution()
-            ||
-            (nonlinear_iteration == 0 && boundary_velocity_manager.get_prescribed_boundary_velocity_indicators().size() > 0))
-          rebuild_stokes_matrix = rebuild_stokes_preconditioner = assemble_newton_stokes_matrix = true;
-        else if (parameters.enable_prescribed_dilation)
-          // The dilation requires the Stokes matrix (which is on the rhs
-          // in the Newton solver) to be updated.
-          rebuild_stokes_matrix = true;
-
-        assemble_stokes_system();
-
-        /**
-         * Eisenstat Walker method for determining the tolerance
-         */
-        if (nonlinear_iteration > 1)
-          {
-            dcr.velocity_residual = system_rhs.block(velocity_block_index).l2_norm();
-            dcr.pressure_residual = system_rhs.block(pressure_block_index).l2_norm();
-            dcr.residual = std::sqrt(dcr.velocity_residual * dcr.velocity_residual + dcr.pressure_residual * dcr.pressure_residual);
-
-            // Eisenstat Walker method for determining the linear solver tolerance
-            if (!use_picard)
-              {
-                const bool EisenstatWalkerChoiceOne = true;
-                parameters.linear_stokes_solver_tolerance = compute_Eisenstat_Walker_linear_tolerance(EisenstatWalkerChoiceOne,
-                                                            newton_handler->parameters.maximum_linear_stokes_solver_tolerance,
-                                                            parameters.linear_stokes_solver_tolerance,
-                                                            dcr.stokes_residuals.second,
-                                                            dcr.residual,
-                                                            dcr.residual_old);
-
-                pcout << "   The linear solver tolerance is set to " << parameters.linear_stokes_solver_tolerance << std::endl;
-              }
-          }
-
-        if (stokes_matrix_free)
-          stokes_matrix_free->build_preconditioner();
-        else
-          build_stokes_preconditioner();
-
-        // Give this another try:
-        dcr.stokes_residuals = solve_stokes(search_direction);
-      }
+    dcr.stokes_residuals = solve_stokes_with_stabilization(dcr, search_direction, use_picard);
 
     // Apply the solution or the update of the solution
     if (nonlinear_iteration == 0)
